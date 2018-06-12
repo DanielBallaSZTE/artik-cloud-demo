@@ -15,46 +15,16 @@
 
 var mqtt = require('mqtt');
 var tls = require('tls');
-var fs = require('fs');
 
 var device_id = 'DEVICE ID';
 var device_token = 'DEVICE TOKEN';
-var cert_file = 'client.crt';
-var key_file = 'client.key';
 
-var tls_opts = {
-  host: 'api.artik.cloud',
+var clientOpts = {
   port: 8883,
-  rejectUnauthorized: false,
-  isServer: false,
-  cert: fs.readFileSync(cert_file),
-  key: fs.readFileSync(key_file),
-}
-
-var tlsSocket = tls.connect(tls_opts);
-
-var mqtt_opts = {
-  socket: tlsSocket,
   username: device_id,
   password: device_token,
-  keepalive: 600,
-}
-
-var mqttClient = mqtt.getClient(mqtt_opts);
-
-var mqtt_sub_opts = {
-  topic: '/v1.1/actions/' + device_id,
-  qos: 0,
-}
-
-// Subscribing to the error channel
-//
-/*
-var mqtt_sub_opts_err = {
-  topic: '/v1.1/errors/' + device_id,
-  qos: 0,
-}
-*/
+  keepalive: 30,
+};
 
 function getMsg() {
   var temperature = Math.round(Math.random() * 100);
@@ -69,32 +39,24 @@ function getMsg() {
   });
 }
 
-var mqtt_pub_opts = {
-  topic: '/v1.1/messages/' + device_id,
-  message: getMsg(),
-  qos: 1,
-}
+var publishCounter = 0;
 
+var client = mqtt.connect('mqtts://api.artik.cloud', clientOpts);
 
 function keepPublishing() {
   setInterval(function() {
-    mqttClient.publish(mqtt_pub_opts);
-  }, 1000);
+    client.publish('/v1.1/messages/' + device_id, getMsg());
+    publishCounter++;
+
+    if (publishCounter == 10) {
+      clearInterval(this);
+      client.end();
+    }
+  }, 500);
 }
 
-tlsSocket.on('secureConnect', function () {
-  mqttClient.on('suback', function () {
-    console.log('Successful subscription');
-    keepPublishing();
-  });
-
-  mqttClient.connect(function () {
-    mqttClient.subscribe(mqtt_sub_opts);
-    // Subscribe to error channel
-    // mqttClient.subscribe(mqtt_sub_opts_err);
-  });
-});
-
-mqttClient.on('message', function(mes) {
-  console.log(mes.message.toString());
+client.on('connect', function() {
+  // Subscribe to the actions channel
+  client.subscribe('/v1.1/actions/' + device_id);
+  keepPublishing();
 });
